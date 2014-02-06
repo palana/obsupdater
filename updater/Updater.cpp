@@ -18,6 +18,33 @@
 
 #include "Updater.h"
 
+#include "scopeguard.hpp"
+
+#include <vector>
+#include <codecvt>
+
+#include <stdio.h>
+#include <string.h>
+
+#include "../lzma/C/7z.h"
+#include "../lzma/C/7zAlloc.h"
+#include "../lzma/C/7zCrc.h"
+#include "../lzma/C/7zFile.h"
+#include "../lzma/C/7zVersion.h"
+
+#define MANIFEST_PATH "/updates/org.example.foo.xconfig"
+#define TEMP_PATH "/updates/org.example.foo"
+
+#ifndef MANIFEST_PATH
+#define MANIFEST_PATH "\\updates\\packages.xconfig"
+#endif
+
+#ifndef TEMP_PATH
+#define TEMP_PATH "\\updates\\temp"
+#endif
+
+using namespace std;
+
 CRITICAL_SECTION updateMutex;
 
 HANDLE cancelRequested;
@@ -34,6 +61,12 @@ BOOL downloadThreadFailure = FALSE;
 int totalFileSize = 0;
 int completedFileSize = 0;
 int completedUpdates = 0;
+
+template <typename T>
+void Zero(T &t)
+{
+    memset(&t, 0, sizeof(T));
+}
 
 VOID Status (const _TCHAR *fmt, ...)
 {
@@ -167,13 +200,13 @@ VOID DestroyUpdateList (update_t *updates)
         next = updates->next;
 
         if (updates->outputPath)
-            free (updates->outputPath);
+            free(updates->outputPath);
         if (updates->previousFile)
-            free (updates->previousFile);
+            free(updates->previousFile);
         if (updates->tempPath)
-            free (updates->tempPath);
+            free(updates->tempPath);
         if (updates->URL)
-            free (updates->URL);
+            free(updates->URL);
 
         free (updates);
 
@@ -357,6 +390,26 @@ DWORD WINAPI UpdateThread (VOID *arg)
     update_t updateList = {0};
     update_t *updates = &updateList;
 
+    DEFER{ DestroyUpdateList(&updateList); };
+
+    DEFER{ if (bExiting) ExitProcess(ret); };
+
+    DEFER
+    {
+        if (!ret)
+            return;
+
+        if (WaitForSingleObject(cancelRequested, 0) == WAIT_OBJECT_0)
+            Status(_T("Update aborted."));
+
+        SendDlgItemMessage(hwndMain, IDC_PROGRESS, PBM_SETSTATE, PBST_ERROR, 0);
+
+        SetDlgItemText(hwndMain, IDC_BUTTON, _T("Exit"));
+        EnableWindow(GetDlgItem(hwndMain, IDC_BUTTON), TRUE);
+
+        updateFailed = TRUE;
+    };
+
     HANDLE hObsMutex;
 
     hObsMutex = OpenMutex(SYNCHRONIZE, FALSE, TEXT("OBSMutex"));
@@ -374,34 +427,46 @@ DWORD WINAPI UpdateThread (VOID *arg)
         CloseHandle (hObsMutex);
 
         if (i == WAIT_OBJECT_0 + 1)
-            goto failure;
+            return ret;
     }
 
     if (!CryptAcquireContext(&hProvider, NULL, NULL, PROV_RSA_FULL, CRYPT_VERIFYCONTEXT))
     {
         SetDlgItemText(hwndMain, IDC_STATUS, TEXT("Update failed: CryptAcquireContext failure"));
-        goto failure;
+        return ret;
     }
 
     SetDlgItemText(hwndMain, IDC_STATUS, TEXT("Searching for available updates..."));
 
-    BOOL bIsPortable = FALSE;
+    bool bIsPortable = false;
 
     _TCHAR *cmdLine = (_TCHAR *)arg;
     if (!cmdLine[0])
     {
         Status(_T("Update failed: Missing command line parameters."));
-        goto failure;
+        return ret;
     }
 
-    _TCHAR *p = _tcschr(cmdLine, ' ');
+    _TCHAR *channel = _tcschr(cmdLine, ' ');
+    if (channel)
+    {
+        *channel = 0;
+        channel++;
+    }
+    else
+    {
+        Status(L"Update failed: Missing command line parameters.");
+        return ret;
+    }
+
+    _TCHAR *p = _tcschr(channel, ' ');
     if (p)
     {
-        *p = '\0';
+        *p = 0;
         p++;
 
         if (!_tcscmp(p, _T("Portable")))
-            bIsPortable = TRUE;
+            bIsPortable = true;
     }
 
     const _TCHAR *targetPlatform = cmdLine;
@@ -417,35 +482,41 @@ DWORD WINAPI UpdateThread (VOID *arg)
     else
     {
         SHGetFolderPath(NULL, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT, lpAppDataPath);
-        StringCbCat (lpAppDataPath, sizeof(lpAppDataPath), TEXT("\\OBS"));        
+        StringCbCat (lpAppDataPath, sizeof(lpAppDataPath), TEXT("\\OBS"));
     }
 
-    StringCbPrintf (manifestPath, sizeof(manifestPath), TEXT("%s\\updates\\packages.xconfig"), lpAppDataPath);
-    StringCbPrintf (tempPath, sizeof(tempPath), TEXT("%s\\updates\\temp"), lpAppDataPath);
+    StringCbPrintf (manifestPath, sizeof(manifestPath), L"%s" TEXT(MANIFEST_PATH), lpAppDataPath);
+    StringCbPrintf (tempPath, sizeof(tempPath), L"%s" TEXT(TEMP_PATH), lpAppDataPath);
 
     CreateDirectory(tempPath, NULL);
 
-    HANDLE hManifest = CreateFile (manifestPath, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
+    DEFER{ RemoveDirectory(tempPath); };
+
+    HANDLE hManifest = CreateFile(manifestPath, GENERIC_READ, 0, NULL, OPEN_EXISTING, 0, NULL);
     if (hManifest == INVALID_HANDLE_VALUE)
     {
         Status(TEXT("Update failed: Could not open update manifest"));
-        goto failure;
+        return ret;
     }
+
+    DEFER{ CloseHandle(hManifest); };
 
     LARGE_INTEGER manifestfileSize;
 
     if (!GetFileSizeEx(hManifest, &manifestfileSize))
     {
         Status(TEXT("Update failed: Could not check size of update manifest"));
-        return 1;
+        return ret;
     }
 
     CHAR *buff = (CHAR *)malloc ((size_t)manifestfileSize.QuadPart + 1);
     if (!buff)
     {
         Status(TEXT("Update failed: Could not allocate memory for update manifest"));
-        goto failure;
+        return ret;
     }
+
+    DEFER{ free(buff); };
 
     DWORD read;
 
@@ -453,15 +524,13 @@ DWORD WINAPI UpdateThread (VOID *arg)
     {
         CloseHandle (hManifest);
         Status(TEXT("Update failed: Error reading update manifest"));
-        goto failure;
+        return ret;
     }
-
-    CloseHandle (hManifest);
 
     if (read != manifestfileSize.QuadPart)
     {
         Status(_T("Update failed: Failed to read update manifest"));
-        goto failure;
+        return ret;
     }
 
     buff[read] = 0;
@@ -471,294 +540,286 @@ DWORD WINAPI UpdateThread (VOID *arg)
 
     root = json_loads(buff, 0, &error);
 
-    free (buff);
-
     if (!root)
     {
         Status (_T("Update failed: Couldn't parse update manifest: %S"), error.text);
-        goto failure;
+        return ret;
     }
+
+    DEFER{ json_decref(root); };
 
     if (!json_is_object(root))
     {
         Status(_T("Update failed: Invalid update manifest"));
-        goto failure;
+        return ret;
     }
 
     //----------------------
     //Parse update manifest
     //----------------------
-    const char *packageName;
-    json_t *package;
 
-    int totalUpdates = 0;
+    char channel_[MAX_PATH];
+    if (!WideCharToMultiByte(CP_UTF8, 0, channel, -1, channel_, _countof(channel_), nullptr, nullptr))
+        return ret;
 
-    json_object_foreach (root, packageName, package)
-    {
-        if (!json_is_object(package))
-            goto failure;
+    json_t *chan = json_object_get(root, channel_);
+    if (!chan)
+        return ret;
 
-        json_t *platform = json_object_get(package, "platform");
-        if (!json_is_string(platform))
-            continue;
+    json_t *plat = json_object_get(chan, _tcscmp(targetPlatform, L"Win32") ? "win64" : "win");
+    if (!plat)
+        return ret;
 
-        const char *platformStr = json_string_value(platform);
+    json_t *hash = json_object_get(plat, "sha1");
+    json_t *url = json_object_get(plat, "url");
+    json_t *filename = json_object_get(plat, "file");
 
-        if (strcmp(platformStr, "all"))
-        {
-            if (!_tcscmp(targetPlatform, _T("Win32")))
-            {
-                if (strcmp (platformStr, "Win32"))
-                    continue;
-            }
-            else if (!_tcscmp(targetPlatform, _T("Win64")))
-            {
-                if (strcmp(platformStr, "Win64"))
-                    continue;
-            }
-        }
+    if (!json_is_string(hash))
+        return ret;
 
-        json_t *name = json_object_get(package, "name");
-        json_t *version = json_object_get(package, "version");
-        json_t *source = json_object_get(package, "source");
-        json_t *path = json_object_get(package, "path");
-        json_t *files = json_object_get(package, "files");
+    if (!json_is_string(url))
+        return ret;
 
-        if (!json_is_object(files))
-            continue;
+    if (!json_is_string(filename))
+        return ret;
 
-        if (!json_is_string(path))
-            continue;
+    char const *hash_ = json_string_value(hash);
+    char const *url_ = json_string_value(url);
+    char const *filename_ = json_string_value(filename);
 
-        const char *pathStr = json_string_value(path);
+    _TCHAR w_hash[MAX_PATH];
+    _TCHAR w_url[MAX_PATH];
+    _TCHAR w_filename[MAX_PATH];
+    _TCHAR w_temp_filepath[MAX_PATH];
 
-        json_t *file;
-        const char *fileName;
+    if (!MultiByteToWideChar(CP_UTF8, 0, hash_, -1, w_hash, _countof(w_hash)))
+        return ret;
 
-        json_object_foreach (files, fileName, file)
-        {
-            if (!json_is_object(file))
-                continue;
+    if (!MultiByteToWideChar(CP_UTF8, 0, url_, -1, w_url, _countof(w_url)))
+        return ret;
 
-            json_t *hash = json_object_get(file, "hash");
-            if (!json_is_string(hash))
-                continue;
+    if (!MultiByteToWideChar(CP_UTF8, 0, filename_, -1, w_filename, _countof(w_filename)))
+        return ret;
 
-            const char *hashStr = json_string_value(hash);
-            if (strlen(hashStr) != 40)
-                continue;
+    StringCbPrintf(w_temp_filepath, sizeof(w_temp_filepath), _T("%s/%s"), tempPath, w_filename);
 
-            const char *sourceStr = json_string_value(source);
-            if (strncmp (sourceStr, "https://obsproject.com/", 23))
-                continue;
+    updates->next = (update_t *)malloc(sizeof(*updates));
+    updates = updates->next;
+    Zero(*updates);
 
-            json_t *size = json_object_get(file, "size");
-            if (!json_is_integer(size))
-                continue;
-
-            int fileSize = (int)json_integer_value(size);
-
-            _TCHAR sourceURL[1024];
-            _TCHAR fullPath[MAX_PATH];
-            _TCHAR updateFileName[MAX_PATH];
-            _TCHAR updateHashStr[41];
-            _TCHAR tempFilePath[MAX_PATH];
-
-            if (!MultiByteToWideChar(CP_UTF8, 0, pathStr, -1, fullPath, _countof(fullPath)))
-                continue;
-
-            if (!IsSafePath(fullPath))
-            {
-                Status (_T("Update failed: Unsafe path '%s' found in manifest"), fullPath);
-                goto failure;
-            }
-
-            if (!MultiByteToWideChar(CP_UTF8, 0, fileName, -1, updateFileName, _countof(updateFileName)))
-                continue;
-
-            if (!IsSafeFilename(updateFileName))
-            {
-                Status (_T("Update failed: Unsafe path '%s' found in manifest"), updateFileName);
-                goto failure;
-            }
-
-            StringCbCat(fullPath, sizeof(fullPath), updateFileName);
-
-            if (!MultiByteToWideChar(CP_UTF8, 0, hashStr, -1, updateHashStr, _countof(updateHashStr)))
-                continue;
-
-            if (!MultiByteToWideChar(CP_UTF8, 0, sourceStr, -1, sourceURL, _countof(sourceURL)))
-                continue;
-            StringCbCat(sourceURL, sizeof(sourceURL), updateFileName);
-
-            StringCbPrintf(tempFilePath, sizeof(tempFilePath), _T("%s\\%s"), tempPath, updateHashStr);
-
-            BYTE existingHash[20];
-
-            //We don't really care if this fails, it's just to avoid wasting bandwidth by downloading unmodified files
-            if (CalculateFileHash(fullPath, existingHash))
-            {
-                _TCHAR fileHashStr[41];
-
-                HashToString(existingHash, fileHashStr);
-
-                if (!_tcscmp(fileHashStr, updateHashStr))
-                    continue;
-            }
-
-            updates->next = (update_t *)malloc(sizeof(*updates));
-            updates = updates->next;
-
-            updates->next = NULL;
-            updates->fileSize = fileSize;
-            updates->previousFile = NULL;
-            updates->outputPath = _tcsdup(fullPath);
-            updates->tempPath = _tcsdup(tempFilePath);
-            updates->URL = _tcsdup(sourceURL);
-            updates->state = STATE_PENDING_DOWNLOAD;
-            StringToHash(updateHashStr, updates->hash);
-
-            totalUpdates++;
-            totalFileSize += fileSize;
-        }
-    }
-
-    json_decref(root);
+    updates->next = nullptr;
+    updates->previousFile = nullptr;
+    updates->outputPath = _tcsdup(w_filename);
+    updates->tempPath = _tcsdup(w_temp_filepath);
+    updates->URL = _tcsdup(w_url);
+    updates->state = STATE_PENDING_DOWNLOAD;
+    StringToHash(w_hash, updates->hash);
 
     //-------------------
     //Download Updates
     //-------------------
-    if (totalUpdates)
+    updates = &updateList;
+    if (!RunDownloadWorkers(1, updates))
+        return ret;
+
+    DEFER{ if (ret) CleanupPartialUpdates(&updateList); };
+
+    //----------------
+    //Install updates
+    //----------------
+    if (completedUpdates != 1)
+        return ret;
+
+    _TCHAR oldFileRenamedPath[MAX_PATH];
+
+    updates = &updateList;
+    if (!updates->next)
+        return ret;
+
+    updates = updates->next;
+
+    Status(_T("Extracting from %s..."), updates->outputPath);
+
+    updates->previousFile = _tcsdup(updates->tempPath); // clean up archive on success
+
+    CFileInStream archiveStream;
+    CLookToRead lookStream;
+    CSzArEx db;
+    SRes res;
+    ISzAlloc allocImp;
+    UInt16 *temp = NULL;
+    size_t tempSize = 0;
+
+    allocImp.Alloc = [](void*, size_t size) -> void* { if (size) return malloc(size); return nullptr; };
+    allocImp.Free = [](void*, void *addr) { free(addr); };
+
+    char tmp_path[MAX_PATH];
+    if (!WideCharToMultiByte(CP_UTF8, 0, updates->tempPath, -1, tmp_path, _countof(tmp_path), nullptr, nullptr))
+        return ret;
+
+    if (InFile_Open(&archiveStream.file, tmp_path))
     {
-        updates = &updateList;
-        if (!RunDownloadWorkers (4, updates))
-            goto failure;
+        Status(L"Could not open archive");
+        return ret;
+    }
+    {
+        DEFER{ File_Close(&archiveStream.file); DeleteFile(w_filename); };
 
-        //----------------
-        //Install updates
-        //----------------
-        if (completedUpdates == totalUpdates)
+        FileInStream_CreateVTable(&archiveStream);
+        LookToRead_CreateVTable(&lookStream, False);
+
+        lookStream.realStream = &archiveStream.s;
+        LookToRead_Init(&lookStream);
+
+        CrcGenerateTable();
+
+        SzArEx_Init(&db);
+        DEFER{ SzArEx_Free(&db, &allocImp); };
+        res = SzArEx_Open(&db, &lookStream.s, &allocImp, &allocImp);
+
+        if (res != SZ_OK)
+            return ret;
+
+        UInt32 blockIndex = 0xFFFFFFFF;
+        Byte *outBuffer = nullptr;
+        size_t outBufferSize = 0;
+
+        DEFER{ IAlloc_Free(&allocImp, outBuffer); };
+
+        _TCHAR w_outfilename[MAX_PATH];
+        for (UInt32 i = 0; i < db.db.NumFiles; i++)
         {
-            _TCHAR oldFileRenamedPath[MAX_PATH];
+            updates->next = (update_t *)malloc(sizeof(*updates));
+            updates = updates->next;
+            Zero(*updates);
 
-            updates = &updateList;
-            while (updates->next)
+            static_assert(sizeof(_TCHAR) == sizeof(UInt16), "_TCHAR != UInt16");
+            SzArEx_GetFileNameUtf16(&db, i, (UInt16*)w_outfilename);
+
+            updates->tempPath = nullptr;
+            updates->outputPath = _tcsdup(w_outfilename);
+            updates->state = STATE_INVALID;
+
+            size_t offset = 0;
+            size_t outSizeProcessed = 0;
+            CSzFileItem const *f = db.db.Files + i;
+            CSzFile outFile;
+            size_t processedSize;
+
+            Status(L"Extracting %s...", w_outfilename);
+
+            res = SzArEx_Extract(&db, &lookStream.s, i,
+                &blockIndex, &outBuffer, &outBufferSize,
+                &offset, &outSizeProcessed,
+                &allocImp, &allocImp);
+
+            if (res != SZ_OK)
             {
-                updates = updates->next;
-
-                Status (_T("Installing %s..."), updates->outputPath);
-
-                //Check if we're replacing an existing file or just installing a new one
-                if (GetFileAttributes(updates->outputPath) != INVALID_FILE_ATTRIBUTES)
-                {
-                    //Backup the existing file in case a rollback is needed
-                    StringCbCopy(oldFileRenamedPath, sizeof(oldFileRenamedPath), updates->outputPath);
-                    StringCbCat(oldFileRenamedPath, sizeof(oldFileRenamedPath), _T(".old"));
-
-                    if (!MyCopyFile(updates->outputPath, oldFileRenamedPath))
-                    {
-                        Status (_T("Update failed: Couldn't backup %s (error %d)"), updates->outputPath, GetLastError());
-                        goto failure;
-                    }
-
-                    if (!MyCopyFile(updates->tempPath, updates->outputPath))
-                    {
-                        _TCHAR baseName[MAX_PATH];
-
-                        int is_sharing_violation = (GetLastError() == ERROR_SHARING_VIOLATION);
-
-                        StringCbCopy (baseName, sizeof(baseName), updates->outputPath);
-                        p = _tcsrchr (baseName, '/');
-                        if (p)
-                        {
-                            p[0] = '\0';
-                            p++;
-                        }
-                        else
-                            p = baseName;
-
-                        if (is_sharing_violation)
-                            Status (_T("Update failed: %s is still in use. Close all programs and try again."), p);
-                        else
-                            Status (_T("Update failed: Couldn't update %s (error %d)"), p, GetLastError());
-                        goto failure;
-                    }
-
-                    DeleteFile (updates->tempPath);
-
-                    updates->previousFile = _tcsdup(oldFileRenamedPath);
-                    updates->state = STATE_INSTALLED;
-                }
-                else
-                {
-                    //We may be installing into new folders, make sure they exist
-                    CreateFoldersForPath (updates->outputPath);
-
-                    if (!MyCopyFile(updates->tempPath, updates->outputPath))
-                    {
-                        Status (_T("Update failed: Couldn't install %s (error %d)"), updates->outputPath, GetLastError());
-                        goto failure;
-                    }
-
-                    DeleteFile (updates->tempPath);
-
-                    updates->previousFile = NULL;
-                    updates->state = STATE_INSTALLED;
-                }
+                if (res == SZ_ERROR_UNSUPPORTED)
+                    Status(L"Archive type is unsupported");
+                else if (res == SZ_ERROR_CRC)
+                    Status(L"CRC error for file %s", w_outfilename);
+                return ret;
             }
 
-            //If we get here, all updates installed successfully so we can purge the old versions
-            updates = &updateList;
-            while (updates->next)
-            {
-                updates = updates->next;
+            if (f->IsDir)
+                continue;
 
-                if (updates->previousFile)
-                    DeleteFile (updates->previousFile);
+            //Check if we're replacing an existing file or just installing a new one
+            if (GetFileAttributes(updates->outputPath) != INVALID_FILE_ATTRIBUTES)
+            {
+                //Backup the existing file in case a rollback is needed
+                StringCbCopy(oldFileRenamedPath, sizeof(oldFileRenamedPath), updates->outputPath);
+                StringCbCat(oldFileRenamedPath, sizeof(oldFileRenamedPath), _T(".old"));
+
+                if (!MyCopyFile(updates->outputPath, oldFileRenamedPath))
+                {
+                    Status(_T("Update failed: Couldn't backup %s (error %d)"), updates->outputPath, GetLastError());
+                    return ret;
+                }
+
+                if (OutFile_OpenW(&outFile, updates->outputPath))
+                {
+                    Status(L"Failed to open files '%s'", updates->outputPath);
+                    return ret;
+                }
+
+                DEFER{ File_Close(&outFile); };
+
+                processedSize = outSizeProcessed;
+                if (File_Write(&outFile, outBuffer + offset, &processedSize) != 0 || processedSize != outSizeProcessed)
+                {
+                    _TCHAR baseName[MAX_PATH];
+
+                    int is_sharing_violation = (GetLastError() == ERROR_SHARING_VIOLATION);
+
+                    StringCbCopy(baseName, sizeof(baseName), updates->outputPath);
+                    p = _tcsrchr(baseName, '/');
+                    if (p)
+                    {
+                        p[0] = '\0';
+                        p++;
+                    }
+                    else
+                        p = baseName;
+
+                    if (is_sharing_violation)
+                        Status(_T("Update failed: %s is still in use. Close all programs and try again."), p);
+                    else
+                        Status(_T("Update failed: Couldn't update %s (error %d)"), p, GetLastError());
+                    return ret;
+                }
+
+                DeleteFile(updates->tempPath);
+
+                updates->previousFile = _tcsdup(oldFileRenamedPath);
+                updates->state = STATE_INSTALLED;
+            }
+            else
+            {
+                //We may be installing into new folders, make sure they exist
+                CreateFoldersForPath(updates->outputPath);
+
+                if (OutFile_OpenW(&outFile, updates->outputPath))
+                {
+                    Status(L"Failed to open files '%s'", updates->outputPath);
+                    return ret;
+                }
+
+                DEFER{ File_Close(&outFile); };
+
+                processedSize = outSizeProcessed;
+                if (File_Write(&outFile, outBuffer + offset, &processedSize) != 0 || processedSize != outSizeProcessed)
+                {
+                    Status(_T("Update failed: Couldn't install %s (error %d)"), updates->outputPath, GetLastError());
+                    return ret;
+                }
+
+                DeleteFile(updates->tempPath);
+
+                updates->previousFile = NULL;
+                updates->state = STATE_INSTALLED;
             }
         }
+    }
 
-        Status(_T("Update complete."));
-    }
-    else
+    //If we get here, all updates installed successfully so we can purge the old versions
+    updates = &updateList;
+    while (updates->next)
     {
-        Status (_T("All available updates are already installed."));
+        updates = updates->next;
+
+        if (updates->previousFile)
+            DeleteFile(updates->previousFile);
     }
+
+    Status(_T("Update complete."));
 
     ret = 0;
 
     SetDlgItemText(hwndMain, IDC_BUTTON, _T("Launch OBS"));
 
-failure:
-
-    if (ret)
-    {
-        //This handles deleting temp files and rolling back and partially installed updates
-        CleanupPartialUpdates (&updateList);
-        RemoveDirectory (tempPath);
-
-        if (WaitForSingleObject(cancelRequested, 0) == WAIT_OBJECT_0)
-            Status (_T("Update aborted."));
-
-        SendDlgItemMessage(hwndMain, IDC_PROGRESS, PBM_SETSTATE, PBST_ERROR, 0);
-
-        SetDlgItemText(hwndMain, IDC_BUTTON, _T("Exit"));
-        EnableWindow (GetDlgItem(hwndMain, IDC_BUTTON), TRUE);
-
-        updateFailed = TRUE;
-    }
-    else
-    {
-        RemoveDirectory (tempPath);
-    }
-
-    DestroyUpdateList (&updateList);
-
-    if (bExiting)
-        ExitProcess (ret);
-
     return ret;
-
 }
 
 VOID CancelUpdate (BOOL quit)

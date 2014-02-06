@@ -1,7 +1,17 @@
 ﻿
-Microsoft Visual Studio Solution File, Format Version 11.00
-# Visual Studio 2010
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2013
+VisualStudioVersion = 12.0.21005.1
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "updater", "updater.vcxproj", "{940932DA-0C44-419A-841F-70281D82A324}"
+	ProjectSection(ProjectDependencies) = postProject
+		{957BDE04-8F71-4482-9C45-C6763B853DAE} = {957BDE04-8F71-4482-9C45-C6763B853DAE}
+		{76226D20-1972-4789-A595-EDACC7A76DC3} = {76226D20-1972-4789-A595-EDACC7A76DC3}
+	EndProjectSection
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "jansson", "..\jansson\win32\vs2010\jansson.vcxproj", "{76226D20-1972-4789-A595-EDACC7A76DC3}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "7zunpack", "..\7zunpack\7zunpack.vcxproj", "{957BDE04-8F71-4482-9C45-C6763B853DAE}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -13,6 +23,14 @@ Global
 		{940932DA-0C44-419A-841F-70281D82A324}.Debug|Win32.Build.0 = Debug|Win32
 		{940932DA-0C44-419A-841F-70281D82A324}.Release|Win32.ActiveCfg = Release|Win32
 		{940932DA-0C44-419A-841F-70281D82A324}.Release|Win32.Build.0 = Release|Win32
+		{76226D20-1972-4789-A595-EDACC7A76DC3}.Debug|Win32.ActiveCfg = Debug|Win32
+		{76226D20-1972-4789-A595-EDACC7A76DC3}.Debug|Win32.Build.0 = Debug|Win32
+		{76226D20-1972-4789-A595-EDACC7A76DC3}.Release|Win32.ActiveCfg = Release|Win32
+		{76226D20-1972-4789-A595-EDACC7A76DC3}.Release|Win32.Build.0 = Release|Win32
+		{957BDE04-8F71-4482-9C45-C6763B853DAE}.Debug|Win32.ActiveCfg = Debug|Win32
+		{957BDE04-8F71-4482-9C45-C6763B853DAE}.Debug|Win32.Build.0 = Debug|Win32
+		{957BDE04-8F71-4482-9C45-C6763B853DAE}.Release|Win32.ActiveCfg = Release|Win32
+		{957BDE04-8F71-4482-9C45-C6763B853DAE}.Release|Win32.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
