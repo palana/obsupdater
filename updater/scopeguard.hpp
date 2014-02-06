@@ -9,14 +9,14 @@ class scopeguard
 {
     Fun f_;
     bool active_;
+    scopeguard()/* = delete*/;
+    scopeguard(const scopeguard&)/* = delete*/;
+    scopeguard& operator=(const scopeguard&)/* = delete*/;
 public:
     scopeguard(Fun f) :
         f_(std::move(f)),
         active_(true)
     {}
-    scopeguard() = delete;
-    scopeguard(const scopeguard&) = delete;
-    scopeguard& operator=(const scopeguard&) = delete;
     scopeguard(scopeguard&& rhs) :
         f_(std::move(rhs.f_)),
         active_(rhs.active_)
@@ -33,7 +33,7 @@ scopeguard<Fun> guard(Fun f)
 
 namespace detail
 {
-    enum class scopeguard_on_exit {};
+    /*enum */class scopeguard_on_exit {};
     template <class Fun>
     scopeguard<Fun> operator+(scopeguard_on_exit, Fun&& f)
     {

@@ -68,6 +68,9 @@ void Zero(T &t)
     memset(&t, 0, sizeof(T));
 }
 
+void *Alloc_(void*, size_t size) { if (size) return malloc(size); return nullptr; }
+void Free_(void*, void *addr) { free(addr); }
+
 VOID Status (const _TCHAR *fmt, ...)
 {
     _TCHAR str[512];
@@ -650,8 +653,8 @@ DWORD WINAPI UpdateThread (VOID *arg)
     UInt16 *temp = NULL;
     size_t tempSize = 0;
 
-    allocImp.Alloc = [](void*, size_t size) -> void* { if (size) return malloc(size); return nullptr; };
-    allocImp.Free = [](void*, void *addr) { free(addr); };
+    allocImp.Alloc = Alloc_;
+    allocImp.Free = Free_;
 
     char tmp_path[MAX_PATH];
     if (!WideCharToMultiByte(CP_UTF8, 0, updates->tempPath, -1, tmp_path, _countof(tmp_path), nullptr, nullptr))
