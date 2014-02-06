@@ -61,22 +61,37 @@ BOOL HTTPGetFile (const _TCHAR *url, const _TCHAR *outputPath, const _TCHAR *ext
     else
         goto failure;
 
-    TCHAR encoding[64];
-    DWORD encodingLen;
-
     TCHAR statusCode[8];
     DWORD statusCodeLen;
 
+    TCHAR length[64];
+    DWORD lengthLen;
+
+    TCHAR encoding[64];
+    DWORD encodingLen;
+
     statusCodeLen = sizeof(statusCode);
-    if (!WinHttpQueryHeaders (hRequest, WINHTTP_QUERY_STATUS_CODE, WINHTTP_HEADER_NAME_BY_INDEX, &statusCode, &statusCodeLen, WINHTTP_NO_HEADER_INDEX))
+    if (!WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE, WINHTTP_HEADER_NAME_BY_INDEX, &statusCode, &statusCodeLen, WINHTTP_NO_HEADER_INDEX))
     {
         *responseCode = -4;
         goto failure;
     }
 
+    length[0] = 0;
+    lengthLen = sizeof(length);
+    if (!WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_CONTENT_LENGTH, WINHTTP_HEADER_NAME_BY_INDEX, length, &lengthLen, WINHTTP_NO_HEADER_INDEX))
+    {
+        if (GetLastError() != ERROR_WINHTTP_HEADER_NOT_FOUND)
+        {
+            *responseCode = -6;
+            goto failure;
+        }
+    }
+    totalFileSize += _tstoi(length);
+
     encoding[0] = 0;
     encodingLen = sizeof(encoding);
-    if (!WinHttpQueryHeaders (hRequest, WINHTTP_QUERY_CONTENT_ENCODING, WINHTTP_HEADER_NAME_BY_INDEX, encoding, &encodingLen, WINHTTP_NO_HEADER_INDEX))
+    if (!WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_CONTENT_ENCODING, WINHTTP_HEADER_NAME_BY_INDEX, encoding, &encodingLen, WINHTTP_NO_HEADER_INDEX))
     {
         if (GetLastError() != ERROR_WINHTTP_HEADER_NOT_FOUND)
         {
