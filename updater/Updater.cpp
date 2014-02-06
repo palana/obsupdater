@@ -32,8 +32,10 @@
 #include "../lzma/C/7zFile.h"
 #include "../lzma/C/7zVersion.h"
 
+/* required defines to avoid clashes with the standard obs updater
 #define MANIFEST_PATH "/updates/org.example.foo.xconfig"
 #define TEMP_PATH "/updates/org.example.foo"
+*/
 
 #ifndef MANIFEST_PATH
 #define MANIFEST_PATH "\\updates\\packages.xconfig"
