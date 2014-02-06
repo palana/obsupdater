@@ -62,7 +62,7 @@
     </ClCompile>
     <Link>
       <AdditionalDependencies>7zunpack.lib;jansson.lib;comctl32.lib;shell32.lib;winhttp.lib;zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>../jansson\win32\vs2010\Output\Release;../zlib;../7zunpack/$(Configuration)/;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>../jansson\win32\vs2010\Output\Debug;../zlib;../7zunpack/$(Configuration)/;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <UACExecutionLevel>AsInvoker</UACExecutionLevel>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <TargetMachine>MachineX86</TargetMachine>
