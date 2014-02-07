@@ -37,7 +37,8 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Label="MSBuild Dynamic Preprocessor Definitions">
-    <DynamicDefines> </DynamicDefines>
+    <DynamicDefines>
+    </DynamicDefines>
   </PropertyGroup>
   <PropertyGroup>
     <_ProjectFileVersion>10.0.40219.1</_ProjectFileVersion>
@@ -62,6 +63,7 @@
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
       <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
+      <PreprocessorDefinitions>$(DynamicDefines);%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>7zunpack.lib;jansson.lib;comctl32.lib;shell32.lib;winhttp.lib;zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
@@ -83,6 +85,7 @@
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <AdditionalOptions>/analyze %(AdditionalOptions)</AdditionalOptions>
       <FavorSizeOrSpeed>Size</FavorSizeOrSpeed>
+      <PreprocessorDefinitions>$(DynamicDefines);%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>7zunpack.lib;jansson.lib;comctl32.lib;shell32.lib;winhttp.lib;zlib.lib;%(AdditionalDependencies)</AdditionalDependencies>
