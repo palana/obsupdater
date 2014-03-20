@@ -31,18 +31,18 @@
 #include <jansson.h>
 #include "resource.h"
 
-typedef enum
+enum state_t
 {
     STATE_INVALID,
     STATE_PENDING_DOWNLOAD,
     STATE_DOWNLOADING,
     STATE_DOWNLOADED,
     STATE_INSTALLED,
-} state_t;
+};
 
-typedef struct update_s
+struct update_t
 {
-    struct update_s *next;
+    update_t        *next;
     _TCHAR          *URL;
     _TCHAR          *outputPath;
     _TCHAR          *tempPath;
@@ -50,14 +50,14 @@ typedef struct update_s
     DWORD           fileSize;
     BYTE            hash[20];
     state_t         state;
-} update_t;
+};
 
-BOOL HTTPGetFile (const _TCHAR *url, const _TCHAR *outputPath, const _TCHAR *extraHeaders, int *responseCode);
+bool HTTPGetFile(const _TCHAR *url, const _TCHAR *outputPath, const _TCHAR *extraHeaders, int *responseCode);
 
-VOID HashToString (BYTE *in, TCHAR *out);
-VOID StringToHash (TCHAR *in, BYTE *out);
+void HashToString (BYTE *in, TCHAR *out);
+void StringToHash (TCHAR *in, BYTE *out);
 
-BOOL CalculateFileHash (TCHAR *path, BYTE *hash);
+bool CalculateFileHash(TCHAR *path, BYTE *hash);
 
 extern HWND hwndMain;
 extern HCRYPTPROV hProvider;

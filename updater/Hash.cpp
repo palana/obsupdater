@@ -1,6 +1,6 @@
 #include "Updater.h"
 
-VOID HashToString (BYTE *in, TCHAR *out)
+void HashToString(BYTE *in, TCHAR *out)
 {
     const char alphabet[] = "0123456789abcdef";
 
@@ -13,24 +13,24 @@ VOID HashToString (BYTE *in, TCHAR *out)
     out[40] = 0;
 }
 
-VOID StringToHash (TCHAR *in, BYTE *out)
+void StringToHash(TCHAR *in, BYTE *out)
 {
     int temp;
 
     for (int i = 0; i < 20; i++)
     {
-        _stscanf_s (in + i * 2, _T("%02x"), &temp);
+        _stscanf_s(in + i * 2, _T("%02x"), &temp);
         out[i] = temp;
     }
 }
 
-BOOL CalculateFileHash (TCHAR *path, BYTE *hash)
+bool CalculateFileHash(TCHAR *path, BYTE *hash)
 {
     BYTE buff[65536];
     HCRYPTHASH hHash;
 
     if (!CryptCreateHash(hProvider, CALG_SHA1, 0, 0, &hHash))
-        return FALSE;
+        return false;
 
     HANDLE hFile;
 
@@ -41,10 +41,10 @@ BOOL CalculateFileHash (TCHAR *path, BYTE *hash)
         {
             //A missing file is OK
             memset (hash, 0, 20);
-            return TRUE;
+            return true;
         }
 
-        return FALSE;
+        return true;
     }
 
     for (;;)
@@ -53,8 +53,8 @@ BOOL CalculateFileHash (TCHAR *path, BYTE *hash)
 
         if (!ReadFile(hFile, buff, sizeof(buff), &read, NULL))
         {
-            CloseHandle (hFile);
-            return FALSE;
+            CloseHandle(hFile);
+            return false;
         }
 
         if (!read)
@@ -63,17 +63,17 @@ BOOL CalculateFileHash (TCHAR *path, BYTE *hash)
         if (!CryptHashData(hHash, buff, read, 0))
         {
             CryptDestroyHash(hHash);
-            CloseHandle (hFile);
-            return FALSE;
+            CloseHandle(hFile);
+            return false;
         }
     }
 
-    CloseHandle (hFile);
+    CloseHandle(hFile);
 
     DWORD hashLength = 20;
     if (!CryptGetHashParam(hHash, HP_HASHVAL, hash, &hashLength, 0))
-        return FALSE;
+        return false;
 
     CryptDestroyHash(hHash);
-    return TRUE;
+    return true;
 }

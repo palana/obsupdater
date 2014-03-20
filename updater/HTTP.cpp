@@ -1,13 +1,13 @@
 #include "Updater.h"
 
-BOOL HTTPGetFile (const _TCHAR *url, const _TCHAR *outputPath, const _TCHAR *extraHeaders, int *responseCode)
+bool HTTPGetFile (const _TCHAR *url, const _TCHAR *outputPath, const _TCHAR *extraHeaders, int *responseCode)
 {
     HINTERNET hSession = NULL;
     HINTERNET hConnect = NULL;
     HINTERNET hRequest = NULL;
     URL_COMPONENTS  urlComponents;
     BOOL secure = FALSE;
-    BOOL ret = FALSE;
+    bool ret = false;
 
     _TCHAR hostName[256];
     _TCHAR path[1024];
@@ -115,7 +115,7 @@ BOOL HTTPGetFile (const _TCHAR *url, const _TCHAR *outputPath, const _TCHAR *ext
         strm.avail_in = 0;
         strm.next_in = Z_NULL;
         
-        ret = inflateInit2(&strm, 16+MAX_WBITS);
+        ret = inflateInit2(&strm, 16+MAX_WBITS) != 0;
 
         if (ret != Z_OK)
             goto failure;
@@ -241,7 +241,7 @@ BOOL HTTPGetFile (const _TCHAR *url, const _TCHAR *outputPath, const _TCHAR *ext
         CloseHandle (updateFile);
     }
 
-    ret = TRUE;
+    ret = true;
 
 failure:
     if (outputBuffer)

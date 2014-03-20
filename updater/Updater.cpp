@@ -73,7 +73,7 @@ void Zero(T &t)
 void *Alloc_(void*, size_t size) { if (size) return malloc(size); return nullptr; }
 void Free_(void*, void *addr) { free(addr); }
 
-VOID Status (const _TCHAR *fmt, ...)
+void Status(const _TCHAR *fmt, ...)
 {
     _TCHAR str[512];
 
@@ -87,7 +87,7 @@ VOID Status (const _TCHAR *fmt, ...)
     va_end(argptr);
 }
 
-VOID CreateFoldersForPath (_TCHAR *path)
+void CreateFoldersForPath(_TCHAR *path)
 {
     _TCHAR *p = path;
 
@@ -96,26 +96,26 @@ VOID CreateFoldersForPath (_TCHAR *path)
         if (*p == '\\' || *p == '/')
         {
             *p = 0;
-            CreateDirectory (path, NULL);
+            CreateDirectory(path, NULL);
             *p = '\\';
         }
         p++;
     }
 }
 
-BOOL MyCopyFile (_TCHAR *src, _TCHAR *dest)
+bool MyCopyFile(_TCHAR *src, _TCHAR *dest)
 {
     int err = 0;
     HANDLE hSrc = NULL, hDest = NULL;
 
-    hSrc = CreateFile (src, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+    hSrc = CreateFile(src, GENERIC_READ, 0, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
     if (hSrc == INVALID_HANDLE_VALUE)
     {
         err = GetLastError();
         goto failure;
     }
 
-    hDest = CreateFile (dest, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
+    hDest = CreateFile(dest, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, 0, NULL);
     if (hDest == INVALID_HANDLE_VALUE)
     {
         err = GetLastError();
@@ -127,7 +127,7 @@ BOOL MyCopyFile (_TCHAR *src, _TCHAR *dest)
 
     for (;;)
     {
-        if (!ReadFile (hSrc, buff, sizeof(buff), &read, NULL))
+        if (!ReadFile(hSrc, buff, sizeof(buff), &read, NULL))
         {
             err = GetLastError();
             goto failure;
@@ -136,7 +136,7 @@ BOOL MyCopyFile (_TCHAR *src, _TCHAR *dest)
         if (read == 0)
             break;
 
-        if (!WriteFile (hDest, buff, read, &wrote, NULL))
+        if (!WriteFile(hDest, buff, read, &wrote, NULL))
         {
             err = GetLastError();
             goto failure;
@@ -146,25 +146,25 @@ BOOL MyCopyFile (_TCHAR *src, _TCHAR *dest)
             goto failure;
     }
 
-    CloseHandle (hSrc);
-    CloseHandle (hDest);
+    CloseHandle(hSrc);
+    CloseHandle(hDest);
 
     if (err)
-        SetLastError (err);
+        SetLastError(err);
 
     return TRUE;
 
 failure:
     if (hSrc != INVALID_HANDLE_VALUE)
-        CloseHandle (hSrc);
+        CloseHandle(hSrc);
     
     if (hDest != INVALID_HANDLE_VALUE)
-        CloseHandle (hDest);
+        CloseHandle(hDest);
 
     return FALSE;
 }
 
-VOID CleanupPartialUpdates (update_t *updates)
+void CleanupPartialUpdates(update_t *updates)
 {
     while (updates->next)
     {
@@ -174,23 +174,23 @@ VOID CleanupPartialUpdates (update_t *updates)
         {
             if (updates->previousFile)
             {
-                DeleteFile (updates->outputPath);
-                MyCopyFile (updates->previousFile, updates->outputPath);
-                DeleteFile (updates->previousFile);
+                DeleteFile(updates->outputPath);
+                MyCopyFile(updates->previousFile, updates->outputPath);
+                DeleteFile(updates->previousFile);
             }
             else
             {
-                DeleteFile (updates->outputPath);
+                DeleteFile(updates->outputPath);
             }
         }
         else if (updates->state == STATE_DOWNLOADED)
         {
-            DeleteFile (updates->tempPath);
+            DeleteFile(updates->tempPath);
         }
     }
 }
 
-VOID DestroyUpdateList (update_t *updates)
+void DestroyUpdateList(update_t *updates)
 {
     update_t *next;
 
@@ -213,13 +213,13 @@ VOID DestroyUpdateList (update_t *updates)
         if (updates->URL)
             free(updates->URL);
 
-        free (updates);
+        free(updates);
 
         updates = next;
     }
 }
 
-BOOL IsSafeFilename (_TCHAR *path)
+bool IsSafeFilename(_TCHAR *path)
 {
     const _TCHAR *p;
 
@@ -244,7 +244,7 @@ BOOL IsSafeFilename (_TCHAR *path)
     return TRUE;
 }
 
-BOOL IsSafePath (_TCHAR * path)
+bool IsSafePath(_TCHAR * path)
 {
     const _TCHAR *p;
 
@@ -266,7 +266,7 @@ BOOL IsSafePath (_TCHAR * path)
     return TRUE;
 }
 
-DWORD WINAPI DownloadWorkerThread (VOID *arg)
+DWORD WINAPI DownloadWorkerThread(void *arg)
 {
     BOOL foundWork;
     update_t *updates = (update_t *)arg;
@@ -275,7 +275,7 @@ DWORD WINAPI DownloadWorkerThread (VOID *arg)
     {
         foundWork = FALSE;
 
-        EnterCriticalSection (&updateMutex);
+        EnterCriticalSection(&updateMutex);
 
         while (updates->next)
         {
@@ -283,7 +283,7 @@ DWORD WINAPI DownloadWorkerThread (VOID *arg)
 
             if (WaitForSingleObject(cancelRequested, 0) == WAIT_OBJECT_0)
             {
-                LeaveCriticalSection (&updateMutex);
+                LeaveCriticalSection(&updateMutex);
                 return 1;
             }
 
@@ -294,28 +294,28 @@ DWORD WINAPI DownloadWorkerThread (VOID *arg)
 
             updates->state = STATE_DOWNLOADING;
 
-            LeaveCriticalSection (&updateMutex);
+            LeaveCriticalSection(&updateMutex);
 
             foundWork = TRUE;
 
             if (downloadThreadFailure)
                 return 1;
 
-            Status (_T("Downloading %s"), updates->outputPath);
+            Status(_T("Downloading %s"), updates->outputPath);
 
             if (!HTTPGetFile(updates->URL, updates->tempPath, _T("Accept-Encoding: gzip"), &responseCode))
             {
                 downloadThreadFailure = TRUE;
-                DeleteFile (updates->tempPath);
-                Status (_T("Update failed: Could not download %s (error code %d)"), updates->outputPath, responseCode);
+                DeleteFile(updates->tempPath);
+                Status(_T("Update failed: Could not download %s (error code %d)"), updates->outputPath, responseCode);
                 return 1;
             }
 
             if (responseCode != 200)
             {
                 downloadThreadFailure = TRUE;
-                DeleteFile (updates->tempPath);
-                Status (_T("Update failed: %s (error code %d)"), updates->outputPath, responseCode);
+                DeleteFile(updates->tempPath);
+                Status(_T("Update failed: %s (error code %d)"), updates->outputPath, responseCode);
                 return 1;
             }
 
@@ -323,30 +323,30 @@ DWORD WINAPI DownloadWorkerThread (VOID *arg)
             if (!CalculateFileHash(updates->tempPath, downloadHash))
             {
                 downloadThreadFailure = TRUE;
-                DeleteFile (updates->tempPath);
-                Status (_T("Update failed: Couldn't verify integrity of %s"), updates->outputPath);
+                DeleteFile(updates->tempPath);
+                Status(_T("Update failed: Couldn't verify integrity of %s"), updates->outputPath);
                 return 1;
             }
 
             if (memcmp(updates->hash, downloadHash, 20))
             {
                 downloadThreadFailure = TRUE;
-                DeleteFile (updates->tempPath);
-                Status (_T("Update failed: Integrity check failed on %s"), updates->outputPath);
+                DeleteFile(updates->tempPath);
+                Status(_T("Update failed: Integrity check failed on %s"), updates->outputPath);
                 return 1;
             }
 
-            EnterCriticalSection (&updateMutex);
+            EnterCriticalSection(&updateMutex);
 
             updates->state = STATE_DOWNLOADED;
             completedUpdates++;
 
-            LeaveCriticalSection (&updateMutex);
+            LeaveCriticalSection(&updateMutex);
         }
 
         if (!foundWork)
         {
-            LeaveCriticalSection (&updateMutex);
+            LeaveCriticalSection(&updateMutex);
             break;
         }
 
@@ -357,38 +357,38 @@ DWORD WINAPI DownloadWorkerThread (VOID *arg)
     return 0;
 }
 
-BOOL RunDownloadWorkers (int num, update_t *updates)
+bool RunDownloadWorkers(int num, update_t *updates)
 {
     DWORD threadID;
     HANDLE *handles;
 
-    InitializeCriticalSection (&updateMutex);
+    InitializeCriticalSection(&updateMutex);
 
-    handles = (HANDLE *)malloc (sizeof(*handles) * num);
+    handles = (HANDLE *)malloc(sizeof(*handles) * num);
     if (!handles)
-        return FALSE;
+        return false;
 
     for (int i = 0; i < num; i++)
     {
-        handles[i] = CreateThread (NULL, 0, DownloadWorkerThread, updates, 0, &threadID);
+        handles[i] = CreateThread(NULL, 0, DownloadWorkerThread, updates, 0, &threadID);
         if (!handles[i])
-            return FALSE;
+            return false;
     }
 
-    WaitForMultipleObjects (num, handles, TRUE, INFINITE);
+    WaitForMultipleObjects(num, handles, TRUE, INFINITE);
 
     for (int i = 0; i < num; i++)
     {
         DWORD exitCode;
-        GetExitCodeThread (handles[i], &exitCode);
+        GetExitCodeThread(handles[i], &exitCode);
         if (exitCode != 0)
-            return FALSE;
+            return false;
     }
 
-    return TRUE;
+    return true;
 }
 
-DWORD WINAPI UpdateThread (VOID *arg)
+DWORD WINAPI UpdateThread(void *arg)
 {
     DWORD ret = 1;
 
@@ -427,9 +427,9 @@ DWORD WINAPI UpdateThread (VOID *arg)
         int i = WaitForMultipleObjects(2, hWait, FALSE, INFINITE);
 
         if (i == WAIT_OBJECT_0)
-            ReleaseMutex (hObsMutex);
+            ReleaseMutex(hObsMutex);
 
-        CloseHandle (hObsMutex);
+        CloseHandle(hObsMutex);
 
         if (i == WAIT_OBJECT_0 + 1)
             return ret;
@@ -487,11 +487,11 @@ DWORD WINAPI UpdateThread (VOID *arg)
     else
     {
         SHGetFolderPath(NULL, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT, lpAppDataPath);
-        StringCbCat (lpAppDataPath, sizeof(lpAppDataPath), TEXT("\\OBS"));
+        StringCbCat(lpAppDataPath, sizeof(lpAppDataPath), TEXT("\\OBS"));
     }
 
-    StringCbPrintf (manifestPath, sizeof(manifestPath), L"%s" TEXT(MANIFEST_PATH), lpAppDataPath);
-    StringCbPrintf (tempPath, sizeof(tempPath), L"%s" TEXT(TEMP_PATH), lpAppDataPath);
+    StringCbPrintf(manifestPath, sizeof(manifestPath), L"%s" TEXT(MANIFEST_PATH), lpAppDataPath);
+    StringCbPrintf(tempPath, sizeof(tempPath), L"%s" TEXT(TEMP_PATH), lpAppDataPath);
 
     CreateDirectory(tempPath, NULL);
 
@@ -525,9 +525,9 @@ DWORD WINAPI UpdateThread (VOID *arg)
 
     DWORD read;
 
-    if (!ReadFile (hManifest, buff, (DWORD)manifestfileSize.QuadPart, &read, NULL))
+    if (!ReadFile(hManifest, buff, (DWORD)manifestfileSize.QuadPart, &read, NULL))
     {
-        CloseHandle (hManifest);
+        CloseHandle(hManifest);
         Status(TEXT("Update failed: Error reading update manifest"));
         return ret;
     }
@@ -547,7 +547,7 @@ DWORD WINAPI UpdateThread (VOID *arg)
 
     if (!root)
     {
-        Status (_T("Update failed: Couldn't parse update manifest: %S"), error.text);
+        Status(_T("Update failed: Couldn't parse update manifest: %S"), error.text);
         return ret;
     }
 
@@ -827,12 +827,12 @@ DWORD WINAPI UpdateThread (VOID *arg)
     return ret;
 }
 
-VOID CancelUpdate (BOOL quit)
+void CancelUpdate(bool quit)
 {
     if (WaitForSingleObject(updateThread, 0) != WAIT_OBJECT_0)
     {
         bExiting = quit;
-        SetEvent (cancelRequested);
+        SetEvent(cancelRequested);
     }
     else
     {
@@ -840,7 +840,7 @@ VOID CancelUpdate (BOOL quit)
     }
 }
 
-VOID LaunchOBS ()
+void LaunchOBS()
 {
     _TCHAR cwd[MAX_PATH];
     _TCHAR obsPath[MAX_PATH];
@@ -859,10 +859,10 @@ VOID LaunchOBS ()
     execInfo.lpDirectory = cwd;
     execInfo.nShow = SW_SHOWNORMAL;
 
-    if (!ShellExecuteEx (&execInfo))
+    if (!ShellExecuteEx(&execInfo))
         Status(_T("Can't launch OBS: Error %d"), GetLastError());
     else
-        ExitProcess (0);
+        ExitProcess(0);
 }
 
 INT_PTR CALLBACK DialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -885,19 +885,19 @@ INT_PTR CALLBACK DialogProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
                         if (updateFailed)
                             PostQuitMessage(0);
                         else
-                            LaunchOBS ();
+                            LaunchOBS();
                     }
                     else
                     {
-                        EnableWindow ((HWND)lParam, FALSE);
-                        CancelUpdate (FALSE);
+                        EnableWindow((HWND)lParam, FALSE);
+                        CancelUpdate(FALSE);
                     }
                 }
             }
             return TRUE;
 
         case WM_CLOSE:
-            CancelUpdate (TRUE);
+            CancelUpdate(TRUE);
             return TRUE;
     }
 
@@ -922,9 +922,9 @@ int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCmdL
     else
         return 1;
 
-    cancelRequested = CreateEvent (NULL, TRUE, FALSE, NULL);
+    cancelRequested = CreateEvent(NULL, TRUE, FALSE, NULL);
 
-    updateThread = CreateThread (NULL, 0, UpdateThread, lpCmdLine, 0, NULL);
+    updateThread = CreateThread(NULL, 0, UpdateThread, lpCmdLine, 0, NULL);
 
     MSG msg;
     while(GetMessage(&msg, NULL, 0, 0))
